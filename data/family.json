@@ -1,0 +1,98 @@
+{
+  "members": [
+    {
+      "id": "1",
+      "firstName": "Grandpa",
+      "lastName": "Smith",
+      "birthDate": "1940-01-01",
+      "gender": "male",
+      "parents": [],
+      "spouses": [
+        "2"
+      ],
+      "children": [
+        "3"
+      ],
+      "media": [],
+      "bio": "The patriarch of the family."
+    },
+    {
+      "id": "2",
+      "firstName": "Grandma",
+      "lastName": "Smith",
+      "birthDate": "1942-05-15",
+      "gender": "female",
+      "parents": [],
+      "spouses": [
+        "1"
+      ],
+      "children": [
+        "3"
+      ],
+      "media": [],
+      "bio": "Makes the best cookies."
+    },
+    {
+      "id": "3",
+      "firstName": "John",
+      "lastName": "Smith",
+      "birthDate": "1970-06-20",
+      "gender": "male",
+      "parents": [
+        "1",
+        "2"
+      ],
+      "spouses": [],
+      "children": [
+        "edb33c0e-3407-427a-b52b-eb6732ebf587"
+      ],
+      "media": [],
+      "bio": "Hard working dad."
+    },
+    {
+      "id": "edb33c0e-3407-427a-b52b-eb6732ebf587",
+      "firstName": "Phil",
+      "lastName": "Cherner",
+      "birthDate": "1994-11-04",
+      "gender": "male",
+      "bio": "",
+      "parents": [
+        "3",
+        "750a34d1-94cb-4bbf-bcdb-56644ca699de"
+      ],
+      "spouses": [],
+      "children": [],
+      "media": []
+    },
+    {
+      "id": "750a34d1-94cb-4bbf-bcdb-56644ca699de",
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "birthDate": "1960-06-22",
+      "gender": "female",
+      "bio": "",
+      "parents": [
+        "7d105d60-4301-4ca0-9025-5a13763acf0f"
+      ],
+      "spouses": [],
+      "children": [
+        "edb33c0e-3407-427a-b52b-eb6732ebf587"
+      ],
+      "media": []
+    },
+    {
+      "id": "7d105d60-4301-4ca0-9025-5a13763acf0f",
+      "firstName": "jenny",
+      "lastName": "smithy",
+      "birthDate": "1934-03-06",
+      "gender": "male",
+      "bio": "",
+      "parents": [],
+      "spouses": [],
+      "children": [
+        "750a34d1-94cb-4bbf-bcdb-56644ca699de"
+      ],
+      "media": []
+    }
+  ]
+}
