@@ -61,15 +61,15 @@ const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
 };
 
 export default function FamilyTreeView({ data, onNodeClick, onAddRelation, onConnect }: FamilyTreeViewProps) {
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   // Recalculate layout whenever data changes
   useEffect(() => {
     const initialNodes: Node[] = data.members.map((member) => ({
       id: member.id,
       type: 'person',
-      data: member,
+      data: { ...member }, // Spread to satisfy Record<string, unknown>
       position: { x: 0, y: 0 },
     }));
 
@@ -140,7 +140,7 @@ export default function FamilyTreeView({ data, onNodeClick, onAddRelation, onCon
         onConnect={handleConnect}
         onConnectStart={onConnectStart}
         onConnectEnd={onConnectEnd}
-        onNodeClick={(_, node) => onNodeClick(node.data as FamilyMember)}
+        onNodeClick={(_, node) => onNodeClick(node.data as unknown as FamilyMember)}
         nodeTypes={nodeTypes}
         fitView
         className="bg-[#f5f5f4]"
