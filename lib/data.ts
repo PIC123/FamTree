@@ -58,6 +58,12 @@ export async function getFamilyData(): Promise<FamilyTreeData> {
         )
         .map((r: any) => r.from_member_id === memberId ? r.to_member_id : r.from_member_id);
 
+      // Parse Position
+      let position = undefined;
+      if (m.position_x !== null && m.position_y !== null) {
+        position = { x: m.position_x, y: m.position_y };
+      }
+
       return {
         id: m.id,
         firstName: m.first_name,
@@ -69,7 +75,8 @@ export async function getFamilyData(): Promise<FamilyTreeData> {
         parents,
         children,
         spouses,
-        media: m.media.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) // sort by newest first
+        media: m.media.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), // sort by newest first
+        position // Add position here
       };
     });
 
@@ -155,6 +162,16 @@ export async function updateMember(id: string, updates: Partial<FamilyMember>): 
     .eq('id', id);
 
   if (error) console.error('Error updating member:', error);
+}
+
+// New function to update position
+export async function updateMemberPosition(id: string, x: number, y: number): Promise<void> {
+  const { error } = await supabase
+    .from('family_members')
+    .update({ position_x: x, position_y: y })
+    .eq('id', id);
+    
+  if (error) console.error('Error updating member position:', error);
 }
 
 export async function deleteMember(id: string): Promise<void> {

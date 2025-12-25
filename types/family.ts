@@ -24,9 +24,14 @@ export interface FamilyMember {
   children: string[]; // IDs of children
   
   media: MediaItem[];
+  
+  // Visual Position
+  position?: {
+    x: number;
+    y: number;
+  };
 }
 
 export interface FamilyTreeData {
   members: FamilyMember[];
 }
-

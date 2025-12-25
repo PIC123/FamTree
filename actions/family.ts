@@ -1,6 +1,6 @@
 'use server';
 
-import { addMember, updateMember, deleteMember, addRelationship, addMediaToMember, addProfileImageToMember } from '@/lib/data';
+import { addMember, updateMember, deleteMember, addRelationship, addMediaToMember, addProfileImageToMember, updateMemberPosition } from '@/lib/data';
 import { FamilyMember, MediaItem } from '@/types/family';
 import { revalidatePath } from 'next/cache';
 import { v4 as uuidv4 } from 'uuid';
@@ -156,4 +156,9 @@ export async function uploadMediaAction(memberId: string, formData: FormData) {
     console.error('Failed to upload media:', error);
     throw error;
   }
+}
+
+export async function updateNodePositionAction(id: string, x: number, y: number) {
+  await updateMemberPosition(id, x, y);
+  revalidatePath('/');
 }
