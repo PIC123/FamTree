@@ -1,185 +1,231 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react";
-import { FamilyTreeData, FamilyMember } from "@/types/family";
-import { LayoutGrid, Calendar } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import FamilyTreeView from "./tree/FamilyTreeView";
-import TimelineView from "./timeline/TimelineView";
-import AddMemberDialog from "./forms/AddMemberDialog";
-import MemberDetailsDialog from "./details/MemberDetailsDialog";
-import { connectMembersAction } from '@/actions/family';
+import { useEffect, useState } from 'react';
+import FamilyTreeView from './tree/FamilyTreeView';
+import TimelineView from './timeline/TimelineView';
+import AddMemberDialog from './forms/AddMemberDialog';
+import MemberDetailsDialog from './details/MemberDetailsDialog';
+import { FamilyTreeData, FamilyMember } from '@/types/family';
+import { createMember, connectMembersAction, connectSpousesAction } from '@/actions/family';
 
 interface AppProps {
   initialData: FamilyTreeData;
 }
 
-type ViewMode = "tree" | "timeline";
-
 export default function App({ initialData }: AppProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>("tree");
+  const [viewMode, setViewMode] = useState<'tree' | 'timeline'>('tree');
   const [data, setData] = useState<FamilyTreeData>(initialData);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
-  
-  // State for pre-filling relationships
   const [initialParentId, setInitialParentId] = useState<string | undefined>(undefined);
+  const [initialSecondParentId, setInitialSecondParentId] = useState<string | undefined>(undefined);
   const [initialChildId, setInitialChildId] = useState<string | undefined>(undefined);
+  const [initialSpouseId, setInitialSpouseId] = useState<string | undefined>(undefined);
+  const [initialPosition, setInitialPosition] = useState<{ x: number, y: number } | undefined>(undefined);
+  const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
   const [memberToEdit, setMemberToEdit] = useState<FamilyMember | null>(null);
 
-  // Update local state when initialData changes (after server revalidate)
   useEffect(() => {
     setData(initialData);
   }, [initialData]);
 
-  const handleAddRelation = (sourceId: string, handleType: 'source' | 'target') => {
-    // source handle (bottom) -> adding a child
-    // target handle (top) -> adding a parent
-    
-    if (handleType === 'source') {
-      setInitialParentId(sourceId);
-      setInitialChildId(undefined);
-    } else {
-      setInitialParentId(undefined);
-      setInitialChildId(sourceId);
-    }
+  const handleAddMember = (parentId?: string, childId?: string) => {
+    setInitialParentId(parentId);
+    setInitialSecondParentId(undefined); // Reset
+    setInitialChildId(childId);
+    setInitialSpouseId(undefined); // Reset
+    setInitialPosition(undefined);
     setMemberToEdit(null);
     setIsAddMemberOpen(true);
   };
 
-  const handleCloseAddDialog = () => {
-    setIsAddMemberOpen(false);
-    // Reset relationship state after dialog closes
-    setTimeout(() => {
-      setInitialParentId(undefined);
+  const handleAddRelation = (sourceId: string, type: 'source' | 'target' | 'spouse', position?: { x: number, y: number }) => {
+    // If dragging from a marriage node (sourceId starts with 'marriage-'), we are adding a child to BOTH parents
+    if (sourceId.startsWith('marriage-')) {
+      const parents = sourceId.replace('marriage-', '').split('_+_');
+      if (parents.length === 2) {
+        setInitialParentId(parents[0]);
+        setInitialSecondParentId(parents[1]);
+        setInitialChildId(undefined);
+        setInitialSpouseId(undefined);
+        setInitialPosition(position);
+        setMemberToEdit(null);
+        setIsAddMemberOpen(true);
+        return;
+      }
+    }
+
+    if (type === 'source') {
+      // Dragging from bottom (source) -> adding a child
+      setInitialParentId(sourceId);
+      setInitialSecondParentId(undefined);
       setInitialChildId(undefined);
-      setMemberToEdit(null);
-    }, 300);
+      setInitialSpouseId(undefined);
+    } else if (type === 'target') {
+      // Dragging from top (target) -> adding a parent
+      setInitialParentId(undefined);
+      setInitialSecondParentId(undefined);
+      setInitialChildId(sourceId);
+      setInitialSpouseId(undefined);
+    } else if (type === 'spouse') {
+       // Dragging from side -> adding a spouse
+       setInitialParentId(undefined);
+       setInitialSecondParentId(undefined);
+       setInitialChildId(undefined);
+       setInitialSpouseId(sourceId);
+    }
+    setInitialPosition(position);
+    setMemberToEdit(null);
+    setIsAddMemberOpen(true);
   };
 
   const handleEditMember = (member: FamilyMember) => {
     setMemberToEdit(member);
+    setInitialParentId(undefined);
+    setInitialSecondParentId(undefined);
+    setInitialChildId(undefined);
+    setInitialSpouseId(undefined);
+    setInitialPosition(undefined);
     setIsAddMemberOpen(true);
+    setSelectedMember(null); // Close details dialog
   };
 
-  // Optimistic handler for adding a member
   const handleOptimisticAddMember = (newMember: FamilyMember) => {
-    setData((prev) => {
-      const updatedMembers = [...prev.members, newMember];
+    setData(prev => {
+      const updatedMembers = [...prev.members];
       
-      const membersWithUpdatedRelationships = updatedMembers.map(m => {
-        const copy = { ...m };
-        if (newMember.parents.includes(m.id) && !m.children.includes(newMember.id)) {
-           copy.children = [...m.children, newMember.id];
+      // Update referenced parents
+      newMember.parents.forEach(pId => {
+        const parent = updatedMembers.find(m => m.id === pId);
+        if (parent && !parent.children.includes(newMember.id)) {
+          parent.children = [...parent.children, newMember.id];
         }
-        if (newMember.children.includes(m.id) && !m.parents.includes(newMember.id)) {
-           copy.parents = [...m.parents, newMember.id];
-        }
-        return copy;
       });
 
-      return {
-        ...prev,
-        members: membersWithUpdatedRelationships
-      };
+      // Update referenced children
+      newMember.children.forEach(cId => {
+        const child = updatedMembers.find(m => m.id === cId);
+        if (child && !child.parents.includes(newMember.id)) {
+          child.parents = [...child.parents, newMember.id];
+        }
+      });
+
+      // Update referenced spouses
+      newMember.spouses.forEach(sId => {
+        const spouse = updatedMembers.find(m => m.id === sId);
+        if (spouse && !spouse.spouses.includes(newMember.id)) {
+          spouse.spouses = [...spouse.spouses, newMember.id];
+        }
+      });
+
+      updatedMembers.push(newMember);
+      return { members: updatedMembers };
     });
   };
 
   const handleOptimisticUpdateMember = (updatedMember: FamilyMember) => {
-    setData((prev) => {
-       const index = prev.members.findIndex(m => m.id === updatedMember.id);
-       if (index === -1) return prev;
-       
-       const newMembers = [...prev.members];
-       newMembers[index] = { ...newMembers[index], ...updatedMember };
-       
-       return { ...prev, members: newMembers };
-    });
+     setData(prev => ({
+       members: prev.members.map(m => m.id === updatedMember.id ? updatedMember : m)
+     }));
   };
 
-  // Optimistic handler for connecting members
-  const handleOptimisticConnect = async (sourceId: string, targetId: string) => {
+  const handleOptimisticConnect = (sourceId: string, targetId: string, type: 'parent' | 'spouse') => {
     setData(prev => {
-      const members = prev.members.map(m => {
+      const updatedMembers = prev.members.map(m => {
         if (m.id === sourceId) {
-          if (!m.children.includes(targetId)) {
-            return { ...m, children: [...m.children, targetId] };
+          if (type === 'parent') {
+             // Avoid duplicates
+             if (!m.children.includes(targetId)) return { ...m, children: [...m.children, targetId] };
+          }
+          if (type === 'spouse') {
+             if (!m.spouses.includes(targetId)) return { ...m, spouses: [...m.spouses, targetId] };
           }
         }
         if (m.id === targetId) {
-          if (!m.parents.includes(sourceId)) {
-            return { ...m, parents: [...m.parents, sourceId] };
+          if (type === 'parent') {
+             if (!m.parents.includes(sourceId)) return { ...m, parents: [...m.parents, sourceId] };
+          }
+          if (type === 'spouse') {
+             if (!m.spouses.includes(sourceId)) return { ...m, spouses: [...m.spouses, sourceId] };
           }
         }
         return m;
       });
-      return { ...prev, members };
-    });
 
-    await connectMembersAction(sourceId, targetId);
+      return {
+        members: updatedMembers
+      };
+    });
+  };
+
+  const onConnect = async (params: { source: string; target: string; sourceHandle: string | null; targetHandle: string | null }) => {
+    const { source, target } = params;
+    
+    // Handle dragging from marriage node to existing child
+    if (source.startsWith('marriage-')) {
+       const parents = source.replace('marriage-', '').split('_+_');
+       if (parents.length === 2) {
+          // Connect BOTH parents to the child
+          handleOptimisticConnect(parents[0], target, 'parent');
+          handleOptimisticConnect(parents[1], target, 'parent');
+          
+          await connectMembersAction(parents[0], target);
+          await connectMembersAction(parents[1], target);
+          return;
+       }
+    }
+
+    // Determine type based on handle or context
+    // Default is parent-child (source is parent, target is child)
+    let type: 'parent' | 'spouse' = 'parent';
+    
+    // If connecting with side handles, it's a spouse connection
+    if (params.sourceHandle === 'right' || params.sourceHandle === 'left' || 
+        params.targetHandle === 'right' || params.targetHandle === 'left') {
+      type = 'spouse';
+    }
+
+    handleOptimisticConnect(source, target, type);
+    
+    if (type === 'spouse') {
+      await connectSpousesAction(source, target);
+    } else {
+      await connectMembersAction(source, target);
+    }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-stone-50 text-stone-900 font-sans">
-      <AddMemberDialog 
-        isOpen={isAddMemberOpen} 
-        onClose={handleCloseAddDialog}
-        initialParentId={initialParentId}
-        initialChildId={initialChildId}
-        memberToEdit={memberToEdit}
-        onAddMemberOptimistic={handleOptimisticAddMember}
-        onUpdateMemberOptimistic={handleOptimisticUpdateMember}
-      />
-      
-      <MemberDetailsDialog
-        member={selectedMember}
-        onClose={() => setSelectedMember(null)}
-        onEdit={handleEditMember}
-      />
-
+    <div className="h-screen w-full bg-stone-50 flex flex-col font-sans text-stone-900">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 bg-white border-b border-stone-200 shadow-sm z-10">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-amber-600 rounded-full flex items-center justify-center text-white font-bold">
-            F
+      <header className="bg-white border-b border-stone-200 px-6 py-4 shadow-sm z-10 flex justify-between items-center">
+        <h1 className="text-2xl font-serif font-bold text-amber-900">Family Tree</h1>
+        
+        <div className="flex items-center gap-4">
+          <div className="bg-stone-100 p-1 rounded-lg flex gap-1">
+            <button
+              onClick={() => setViewMode('tree')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'tree' 
+                  ? 'bg-white text-amber-900 shadow-sm' 
+                  : 'text-stone-500 hover:text-stone-700'
+              }`}
+            >
+              Tree View
+            </button>
+            <button
+              onClick={() => setViewMode('timeline')}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                viewMode === 'timeline' 
+                  ? 'bg-white text-amber-900 shadow-sm' 
+                  : 'text-stone-500 hover:text-stone-700'
+              }`}
+            >
+              Timeline
+            </button>
           </div>
-          <h1 className="text-xl font-semibold text-stone-800 tracking-tight">Family Legacy</h1>
-        </div>
-
-        <div className="flex items-center gap-2 bg-stone-100 p-1 rounded-lg border border-stone-200">
-          <button
-            onClick={() => setViewMode("tree")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === "tree"
-                ? "bg-white text-amber-700 shadow-sm"
-                : "text-stone-500 hover:text-stone-700"
-            }`}
-          >
-            <LayoutGrid size={16} />
-            Tree
-          </button>
-          <button
-            onClick={() => setViewMode("timeline")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === "timeline"
-                ? "bg-white text-amber-700 shadow-sm"
-                : "text-stone-500 hover:text-stone-700"
-            }`}
-          >
-            <Calendar size={16} />
-            Timeline
-          </button>
-        </div>
-
-        <div>
+          
           <button 
-            onClick={() => {
-              setInitialParentId(undefined);
-              setInitialChildId(undefined);
-              setMemberToEdit(null);
-              setIsAddMemberOpen(true);
-            }}
-            className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+            onClick={() => handleAddMember()}
+            className="bg-amber-700 hover:bg-amber-800 text-white px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors"
           >
             Add Member
           </button>
@@ -188,40 +234,40 @@ export default function App({ initialData }: AppProps) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-hidden relative">
-        <AnimatePresence mode="wait">
-          {viewMode === "tree" ? (
-            <motion.div
-              key="tree"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 1.05 }}
-              transition={{ duration: 0.2 }}
-              className="w-full h-full"
-            >
-              <FamilyTreeView 
-                data={data} 
-                onNodeClick={(member) => setSelectedMember(member)} 
-                onAddRelation={handleAddRelation}
-                onConnect={handleOptimisticConnect}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="timeline"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.2 }}
-              className="w-full h-full"
-            >
-              <TimelineView 
-                data={data} 
-                onMemberClick={(member) => setSelectedMember(member)}
-              />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {viewMode === 'tree' ? (
+          <FamilyTreeView 
+            data={data} 
+            onNodeClick={setSelectedMember}
+            onAddRelation={handleAddRelation}
+            onConnect={onConnect}
+          />
+        ) : (
+          <TimelineView 
+            data={data} 
+            onMemberClick={setSelectedMember}
+          />
+        )}
       </main>
+
+      {/* Dialogs */}
+      <AddMemberDialog 
+        isOpen={isAddMemberOpen} 
+        onClose={() => setIsAddMemberOpen(false)}
+        initialParentId={initialParentId}
+        initialSecondParentId={initialSecondParentId}
+        initialChildId={initialChildId}
+        initialSpouseId={initialSpouseId}
+        initialPosition={initialPosition}
+        memberToEdit={memberToEdit}
+        onAddMemberOptimistic={handleOptimisticAddMember}
+        onUpdateMemberOptimistic={handleOptimisticUpdateMember}
+      />
+      
+      <MemberDetailsDialog 
+        member={selectedMember} 
+        onClose={() => setSelectedMember(null)} 
+        onEdit={handleEditMember}
+      />
     </div>
   );
 }

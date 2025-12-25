@@ -13,6 +13,7 @@ export interface FamilyMember {
   id: string;
   firstName: string;
   lastName: string;
+  maidenName?: string; // New field
   birthDate?: string;
   deathDate?: string;
   gender?: 'male' | 'female' | 'other';

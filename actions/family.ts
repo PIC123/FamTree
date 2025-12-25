@@ -1,6 +1,6 @@
 'use server';
 
-import { addMember, updateMember, deleteMember, addRelationship, addMediaToMember, addProfileImageToMember, updateMemberPosition } from '@/lib/data';
+import { addMember, updateMember, deleteMember, addRelationship, addMediaToMember, addProfileImageToMember, updateMemberPosition, deleteRelationship } from '@/lib/data';
 import { FamilyMember, MediaItem } from '@/types/family';
 import { revalidatePath } from 'next/cache';
 import { v4 as uuidv4 } from 'uuid';
@@ -39,16 +39,23 @@ async function saveFileToSupabase(file: File): Promise<string> {
 export async function createMember(formData: FormData) {
   const firstName = formData.get('firstName') as string;
   const lastName = formData.get('lastName') as string;
+  const maidenName = formData.get('maidenName') as string;
   const birthDate = formData.get('birthDate') as string;
   const bio = formData.get('bio') as string;
   const gender = formData.get('gender') as 'male' | 'female' | 'other';
   
   const id = (formData.get('id') as string) || uuidv4();
   const parentId = formData.get('initialParentId') as string;
+  const secondParentId = formData.get('initialSecondParentId') as string; // New
   const childId = formData.get('initialChildId') as string;
+  const spouseId = formData.get('initialSpouseId') as string;
 
-  const parents = parentId ? [parentId] : [];
+  const parents = [];
+  if (parentId) parents.push(parentId);
+  if (secondParentId) parents.push(secondParentId);
+
   const children = childId ? [childId] : [];
+  const spouses = spouseId ? [spouseId] : [];
   
   // Handle Profile Picture
   const profileImageFile = formData.get('profileImage') as File;
@@ -73,16 +80,37 @@ export async function createMember(formData: FormData) {
     id,
     firstName,
     lastName,
+    maidenName,
     birthDate,
     gender,
     bio,
     parents, 
-    spouses: [],
+    spouses,
     children,
     media
   };
 
+  // If we have a second parent, we might want to calculate an initial position
+  // But position is usually set by drag end in optimistic update.
+  // We should accept position from FormData if provided?
+  // The user said "not connected to anything in the wrong spot".
+  // If we save position now, it persists.
+  const posX = parseFloat(formData.get('positionX') as string);
+  const posY = parseFloat(formData.get('positionY') as string);
+  
+  if (!isNaN(posX) && !isNaN(posY)) {
+    newMember.position = { x: posX, y: posY };
+  }
+
   await addMember(newMember);
+  
+  // If we have position, save it (addMember doesn't save position by default in current data.ts implementation?
+  // Let's check data.ts addMember. It inserts into family_members.
+  // We need to update addMember in data.ts to handle position OR call updateMemberPosition here.
+  if (newMember.position) {
+    await updateMemberPosition(newMember.id, newMember.position.x, newMember.position.y);
+  }
+
   revalidatePath('/');
   return newMember;
 }
@@ -90,6 +118,7 @@ export async function createMember(formData: FormData) {
 export async function updateMemberAction(id: string, formData: FormData) {
   const firstName = formData.get('firstName') as string;
   const lastName = formData.get('lastName') as string;
+  const maidenName = formData.get('maidenName') as string;
   const birthDate = formData.get('birthDate') as string;
   const bio = formData.get('bio') as string;
   const gender = formData.get('gender') as 'male' | 'female' | 'other';
@@ -118,6 +147,7 @@ export async function updateMemberAction(id: string, formData: FormData) {
   await updateMember(id, {
     firstName,
     lastName,
+    maidenName,
     birthDate,
     bio,
     gender
@@ -132,6 +162,16 @@ export async function deleteMemberAction(id: string) {
 
 export async function connectMembersAction(sourceId: string, targetId: string) {
   await addRelationship(sourceId, targetId, 'parent');
+  revalidatePath('/');
+}
+
+export async function connectSpousesAction(sourceId: string, targetId: string) {
+  await addRelationship(sourceId, targetId, 'spouse');
+  revalidatePath('/');
+}
+
+export async function deleteRelationshipAction(sourceId: string, targetId: string, type: 'parent' | 'child' | 'spouse') {
+  await deleteRelationship(sourceId, targetId, type);
   revalidatePath('/');
 }
 

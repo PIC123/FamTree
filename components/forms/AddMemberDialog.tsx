@@ -9,7 +9,10 @@ interface AddMemberDialogProps {
   isOpen: boolean;
   onClose: () => void;
   initialParentId?: string;
+  initialSecondParentId?: string;
   initialChildId?: string;
+  initialSpouseId?: string;
+  initialPosition?: { x: number, y: number };
   memberToEdit?: FamilyMember | null;
   onAddMemberOptimistic?: (member: FamilyMember) => void;
   onUpdateMemberOptimistic?: (member: FamilyMember) => void;
@@ -19,7 +22,10 @@ export default function AddMemberDialog({
   isOpen, 
   onClose, 
   initialParentId, 
+  initialSecondParentId,
   initialChildId,
+  initialSpouseId,
+  initialPosition,
   memberToEdit,
   onAddMemberOptimistic,
   onUpdateMemberOptimistic
@@ -27,6 +33,7 @@ export default function AddMemberDialog({
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedGender, setSelectedGender] = useState<'male' | 'female' | 'other'>('male');
 
   // Reset state when opening/closing or changing edit mode
   useEffect(() => {
@@ -35,9 +42,11 @@ export default function AddMemberDialog({
         // Pre-fill for edit
         const profilePic = memberToEdit.media.find(m => m.type === 'image');
         setPreviewUrl(profilePic ? profilePic.url : null);
+        setSelectedGender(memberToEdit.gender || 'male');
       } else {
         // Reset for add
         setPreviewUrl(null);
+        setSelectedGender('male');
       }
     }
   }, [isOpen, memberToEdit]);
@@ -61,16 +70,11 @@ export default function AddMemberDialog({
         const updatedMember = { ...memberToEdit };
         updatedMember.firstName = formData.get('firstName') as string;
         updatedMember.lastName = formData.get('lastName') as string;
+        updatedMember.maidenName = formData.get('maidenName') as string;
         updatedMember.birthDate = formData.get('birthDate') as string;
         updatedMember.gender = formData.get('gender') as any;
         updatedMember.bio = formData.get('bio') as string;
         
-        if (previewUrl && previewUrl !== memberToEdit.media.find(m => m.type === 'image')?.url) {
-           // If new image uploaded (blob url), optimistic update might be tricky for image
-           // but we can try showing it.
-           // For simplicity, we might skip full media optimistic update for edit
-           // or just add a temp one.
-        }
         onUpdateMemberOptimistic(updatedMember);
       }
 
@@ -81,11 +85,22 @@ export default function AddMemberDialog({
       const id = uuidv4();
       formData.append('id', id);
 
-      const parents = initialParentId ? [initialParentId] : [];
+      const parents = [];
+      if (initialParentId) parents.push(initialParentId);
+      if (initialSecondParentId) parents.push(initialSecondParentId);
+
       const children = initialChildId ? [initialChildId] : [];
+      const spouses = initialSpouseId ? [initialSpouseId] : [];
       
       if (initialParentId) formData.append('initialParentId', initialParentId);
+      if (initialSecondParentId) formData.append('initialSecondParentId', initialSecondParentId);
       if (initialChildId) formData.append('initialChildId', initialChildId);
+      if (initialSpouseId) formData.append('initialSpouseId', initialSpouseId);
+      
+      if (initialPosition) {
+        formData.append('positionX', initialPosition.x.toString());
+        formData.append('positionY', initialPosition.y.toString());
+      }
       
       if (onAddMemberOptimistic) {
         const media: MediaItem[] = [];
@@ -103,13 +118,15 @@ export default function AddMemberDialog({
           id,
           firstName: formData.get('firstName') as string,
           lastName: formData.get('lastName') as string,
+          maidenName: formData.get('maidenName') as string,
           birthDate: formData.get('birthDate') as string,
           gender: formData.get('gender') as any,
           bio: formData.get('bio') as string,
           parents,
           children,
-          spouses: [],
-          media
+          spouses,
+          media,
+          position: initialPosition
         };
         onAddMemberOptimistic(optimisticMember);
       }
@@ -130,11 +147,13 @@ export default function AddMemberDialog({
           <h2 className="text-lg font-semibold text-stone-800">
             {memberToEdit 
               ? 'Edit Family Member' 
-              : initialParentId 
+              : (initialParentId || initialSecondParentId)
                 ? 'Add Child' 
                 : initialChildId 
                   ? 'Add Parent' 
-                  : 'Add Family Member'
+                  : initialSpouseId
+                    ? 'Add Spouse'
+                    : 'Add Family Member'
             }
           </h2>
           <button onClick={onClose} className="text-stone-500 hover:text-stone-700">
@@ -187,6 +206,18 @@ export default function AddMemberDialog({
             </div>
           </div>
 
+          {selectedGender === 'female' && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-stone-700">Maiden Name</label>
+              <input
+                name="maidenName"
+                defaultValue={memberToEdit?.maidenName}
+                placeholder="Optional"
+                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
             <label className="text-sm font-medium text-stone-700">Birth Date</label>
             <input
@@ -201,7 +232,8 @@ export default function AddMemberDialog({
             <label className="text-sm font-medium text-stone-700">Gender</label>
             <select
               name="gender"
-              defaultValue={memberToEdit?.gender || 'male'}
+              value={selectedGender}
+              onChange={(e) => setSelectedGender(e.target.value as any)}
               className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500"
             >
               <option value="male">Male</option>

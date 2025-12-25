@@ -68,6 +68,7 @@ export async function getFamilyData(): Promise<FamilyTreeData> {
         id: m.id,
         firstName: m.first_name,
         lastName: m.last_name,
+        maidenName: m.maiden_name,
         birthDate: m.birth_date,
         deathDate: m.death_date,
         gender: m.gender,
@@ -75,8 +76,8 @@ export async function getFamilyData(): Promise<FamilyTreeData> {
         parents,
         children,
         spouses,
-        media: m.media.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), // sort by newest first
-        position // Add position here
+        media: m.media.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
+        position 
       };
     });
 
@@ -95,10 +96,13 @@ export async function addMember(member: FamilyMember): Promise<FamilyMember> {
       id: member.id,
       first_name: member.firstName,
       last_name: member.lastName,
+      maiden_name: member.maidenName,
       birth_date: member.birthDate,
       death_date: member.deathDate,
       gender: member.gender,
-      bio: member.bio
+      bio: member.bio,
+      position_x: member.position?.x,
+      position_y: member.position?.y
     });
 
   if (memberError) {
@@ -117,6 +121,11 @@ export async function addMember(member: FamilyMember): Promise<FamilyMember> {
   // Children (this member is "from", children are "to")
   for (const cId of member.children) {
     relationships.push({ from_member_id: member.id, to_member_id: cId, type: 'parent' });
+  }
+
+  // Spouses (this member is "from", spouse is "to")
+  for (const sId of member.spouses) {
+    relationships.push({ from_member_id: member.id, to_member_id: sId, type: 'spouse' });
   }
 
   if (relationships.length > 0) {
@@ -151,6 +160,7 @@ export async function updateMember(id: string, updates: Partial<FamilyMember>): 
   const dbUpdates: any = {};
   if (updates.firstName) dbUpdates.first_name = updates.firstName;
   if (updates.lastName) dbUpdates.last_name = updates.lastName;
+  if (updates.maidenName !== undefined) dbUpdates.maiden_name = updates.maidenName; 
   if (updates.birthDate) dbUpdates.birth_date = updates.birthDate;
   if (updates.deathDate) dbUpdates.death_date = updates.deathDate;
   if (updates.gender) dbUpdates.gender = updates.gender;
@@ -164,7 +174,6 @@ export async function updateMember(id: string, updates: Partial<FamilyMember>): 
   if (error) console.error('Error updating member:', error);
 }
 
-// New function to update position
 export async function updateMemberPosition(id: string, x: number, y: number): Promise<void> {
   const { error } = await supabase
     .from('family_members')
@@ -175,8 +184,6 @@ export async function updateMemberPosition(id: string, x: number, y: number): Pr
 }
 
 export async function deleteMember(id: string): Promise<void> {
-  // Cascading deletes should handle relations/media if configured in DB
-  // But explicit delete is safer
   const { error } = await supabase
     .from('family_members')
     .delete()
@@ -185,27 +192,62 @@ export async function deleteMember(id: string): Promise<void> {
   if (error) console.error('Error deleting member:', error);
 }
 
-export async function addRelationship(fromId: string, toId: string, type: 'parent' | 'child' | 'spouse'): Promise<void> {
-  // Normalize direction
+export async function deleteRelationship(fromId: string, toId: string, type: 'parent' | 'child' | 'spouse'): Promise<void> {
   let from = fromId;
   let to = toId;
   let relType = type;
 
   if (type === 'child') {
-     // fromId is child of toId -> toId is parent of fromId
      from = toId;
      to = fromId;
      relType = 'parent';
   }
 
-  // Check if exists
-  const { data: existing } = await supabase
+  // Delete matching relationship (try both directions for spouse)
+  if (relType === 'spouse') {
+    const { error } = await supabase
+      .from('relationships')
+      .delete()
+      .or(`and(from_member_id.eq.${from},to_member_id.eq.${to}),and(from_member_id.eq.${to},to_member_id.eq.${from})`)
+      .eq('type', 'spouse');
+      
+    if (error) console.error('Error deleting spouse relationship:', error);
+  } else {
+    const { error } = await supabase
+      .from('relationships')
+      .delete()
+      .eq('from_member_id', from)
+      .eq('to_member_id', to)
+      .eq('type', relType);
+
+    if (error) console.error('Error deleting relationship:', error);
+  }
+}
+
+export async function addRelationship(fromId: string, toId: string, type: 'parent' | 'child' | 'spouse'): Promise<void> {
+  let from = fromId;
+  let to = toId;
+  let relType = type;
+
+  if (type === 'child') {
+     from = toId;
+     to = fromId;
+     relType = 'parent';
+  }
+
+  // Check if exists (check both directions for spouse)
+  let query = supabase
     .from('relationships')
     .select('*')
-    .eq('from_member_id', from)
-    .eq('to_member_id', to)
-    .eq('type', relType)
-    .single();
+    .eq('type', relType);
+    
+  if (relType === 'spouse') {
+    query = query.or(`and(from_member_id.eq.${from},to_member_id.eq.${to}),and(from_member_id.eq.${to},to_member_id.eq.${from})`);
+  } else {
+    query = query.eq('from_member_id', from).eq('to_member_id', to);
+  }
+
+  const { data: existing } = await query.single();
 
   if (!existing) {
     await supabase.from('relationships').insert({
@@ -217,8 +259,6 @@ export async function addRelationship(fromId: string, toId: string, type: 'paren
 }
 
 export async function addProfileImageToMember(memberId: string, mediaItem: MediaItem): Promise<void> {
-  // Just insert the media item
-  // The sorting in getFamilyData (created_at desc) will make the newest one the profile pic
   const { error } = await supabase
     .from('media')
     .insert({
